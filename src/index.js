@@ -1,132 +1,73 @@
-/*现在我们把它们集中到一个地方，给这个地方起个名字叫做 store，然后构建一个函数 createStore，
-用来专门生产这种 state 和 dispatch 的集合，这样别的 App 也可以用这种模式了*/
+/* 我们接下来会继续优化我们的 createStore 的模式，让它使我们的应用程序获得更好的性能。
 
-// function createStore (state, stateChanger) {
-//   const getState = () => state
-//   const dispatch = (action) => stateChanger(state, action)
-//   return { getState, dispatch }
-// }
+但在开始之前，我们先用一节的课程来介绍一下一个函数式编程里面非常重要的概念 —— 纯函数（Pure Function）。
 
-/*
+简单来说，一个函数的返回结果只依赖于它的参数，并且在执行过程里面没有副作用，我们就把这个函数叫做纯函数。这么说肯定比较抽象，我们把它掰开来看：
 
-createStore 接受两个参数，一个是表示应用程序状态的 state；
-另外一个是 stateChanger，它来描述应用程序状态会根据 action 发生什么变化，其实就是相当于本节开头的 dispatch 代码里面的内容。
+函数的返回结果只依赖于它的参数。
+函数执行过程里面没有副作用。
+函数的返回结果只依赖于它的参数
+const a = 1
+const foo = (b) => a + b
+foo(2) // => 3
+foo 函数不是一个纯函数，因为它返回的结果依赖于外部变量 a，我们在不知道 a 的值的情况下，并不能保证 foo(2) 的返回值是 3。
+虽然 foo 函数的代码实现并没有变化，传入的参数也没有变化，
+但它的返回值却是不可预料的，现在 foo(2) 是 3，可能过了一会就是 4 了，因为 a 可能发生了变化变成了 2。
 
-createStore 会返回一个对象，这个对象包含两个方法 getState 和 dispatch。
-getState 用于获取 state 数据，其实就是简单地把 state 参数返回。
-dispatch 用于修改数据，和以前一样会接受 action，然后它会把 state 和 action 一并传给 stateChanger，
-那么 stateChanger 就可以根据 action 来修改 state 了。
+const a = 1
+const foo = (x, b) => x + b
+foo(1, 2) // => 3
+现在 foo 的返回结果只依赖于它的参数 x 和 b，foo(1, 2) 永远是 3。今天是 3，明天也是 3，在服务器跑是 3，
+在客户端跑也 3，不管你外部发生了什么变化，foo(1, 2) 永远是 3。只
+要 foo 代码不改变，你传入的参数是确定的，那么 foo(1, 2) 的值永远是可预料的。
 
+这就是纯函数的第一个条件：一个函数的返回结果只依赖于它的参数。
+
+函数执行过程没有副作用
+一个函数执行过程对产生了外部可观察的变化那么就说这个函数是有副作用的。
+
+我们修改一下 foo：
+
+const a = 1
+const foo = (obj, b) => {
+  return obj.x + b
+}
+const counter = { x: 1 }
+foo(counter, 2) // => 3
+counter.x // => 1
+我们把原来的 x 换成了 obj，我现在可以往里面传一个对象进行计算，计算的过程里面并不会对传入的对象进行修改，
+计算前后的 counter 不会发生任何变化，计算前是 1，计算后也是 1，它现在是纯的。但是我再稍微修改一下它：
+
+const a = 1
+const foo = (obj, b) => {
+  obj.x = 2
+  return obj.x + b
+}
+const counter = { x: 1 }
+foo(counter, 2) // => 4
+counter.x // => 2
+现在情况发生了变化，我在 foo 内部加了一句 obj.x = 2，计算前 counter.x 是 1，但是计算以后 counter.x 是 2。
+foo 函数的执行对外部的 counter 产生了影响，它产生了副作用，因为它修改了外部传进来的对象，现在它是不纯的。
+
+但是你在函数内部构建的变量，然后进行数据的修改不是副作用：
+
+const foo = (b) => {
+  const obj = { x: 1 }
+  obj.x = 2
+  return obj.x + b
+}
+虽然 foo 函数内部修改了 obj，但是 obj 是内部变量，外部程序根本观察不到，修改 obj 并不会产生外部可观察的变化，
+这个函数是没有副作用的，因此它是一个纯函数。
+
+除了修改外部的变量，一个函数在执行过程中还有很多方式产生外部可观察的变化，
+比如说调用 DOM API 修改页面，或者你发送了 Ajax 请求，还有调用 window.reload 刷新浏览器，甚至是 console.log 往控制台打印数据也是副作用。
+
+纯函数很严格，也就是说你几乎除了计算数据以外什么都不能干，计算的时候还不能依赖除了函数参数以外的数据。
+
+总结
+一个函数的返回结果只依赖于它的参数，并且在执行过程里面没有副作用，我们就把这个函数叫做纯函数。
+
+为什么要煞费苦心地构建纯函数？因为纯函数非常“靠谱”，执行一个纯函数你不用担心它会干什么坏事，
+它不会产生不可预料的行为，也不会对外部产生影响。
+如果你的应用程序大多数函数都是由纯函数组成，那么你的程序测试、调试起来会非常方便。
 */
-
-//修改上一节的dispatch方法成为stateChanger
-// function stateChanger (state, action) {
-//   switch (action.type) {
-//     case 'UPDATE_TITLE_TEXT':
-//       state.title.text = action.text
-//       break
-//     case 'UPDATE_TITLE_COLOR':
-//       state.title.color = action.color
-//       break
-//     default:
-//       break
-//   }
-// }
-
-/*
-针对每个不同的 App，我们可以给 createStore 传入初始的数据 appState，和一个描述数据变化的函数 stateChanger，然后生成一个 store。
-需要修改数据的时候通过 store.dispatch，需要获取数据的时候通过 store.getState。
-*/
-
-/* 
-
-上面的代码有一个问题，我们每次通过 dispatch 修改数据的时候，其实只是数据发生了变化，
-如果我们不手动调用 renderApp，页面上的内容是不会发生变化的。
-但是我们总不能每次 dispatch 的时候都手动调用一下 renderApp，
-我们肯定希望数据变化的时候程序能够智能一点地自动重新渲染数据，而不是手动调用。
-
-往 dispatch里面加 renderApp 就好了，但是这样 createStore 就不够通用了。
-我们希望用一种通用的方式“监听”数据变化，然后重新渲染页面，这里要用到观察者模式。修改 createStore
-
-*/
-
-// function createStore (state, stateChanger) {
-//   const listeners = []
-//   const subscribe = (listener) => listeners.push(listener)
-//   const getState = () => state
-//   const dispatch = (action) => {
-//     stateChanger(state, action)
-//     listeners.forEach((listener) => listener())
-//   }
-//   return { getState, dispatch, subscribe }
-// }
-
-/*
-
-我们在 createStore 里面定义了一个数组 listeners，还有一个新的方法 subscribe，
-可以通过 store.subscribe(listener) 的方式给 subscribe 传入一个监听函数，这个函数会被 push 到数组当中。
-
-我们修改了 dispatch，每次当它被调用的时候，除了会调用 stateChanger 进行数据的修改，
-还会遍历 listeners 数组里面的函数，然后一个个地去调用。相当于我们可以通过 subscribe 传入数据变化的监听函数，
-每当 dispatch 的时候，监听函数就会被调用，这样我们就可以在每当数据变化时候进行重新渲染：
-
-*/
-
-function createStore (state, stateChanger) {
-  const listeners = []
-  const subscribe = (listener) => listeners.push(listener)
-  const getState = () => state
-  const dispatch = (action) => {
-    stateChanger(state, action)
-    listeners.forEach((listener) => listener())
-  }
-  return { getState, dispatch, subscribe }
-}
-
-function renderApp (appState) {
-  renderTitle(appState.title)
-  renderContent(appState.content)
-}
-
-function renderTitle (title) {
-  const titleDOM = document.getElementById('title')
-  titleDOM.innerHTML = title.text
-  titleDOM.style.color = title.color
-}
-
-function renderContent (content) {
-  const contentDOM = document.getElementById('content')
-  contentDOM.innerHTML = content.text
-  contentDOM.style.color = content.color
-}
-
-let appState = {
-  title: {
-    text: 'This is Title',
-    color: 'red',
-  },
-  content: {
-    text: 'This is Content',
-    color: 'blue'
-  }
-}
-
-function stateChanger (state, action) {
-  switch (action.type) {
-    case 'UPDATE_TITLE_TEXT':
-      state.title.text = action.text
-      break
-    case 'UPDATE_TITLE_COLOR':
-      state.title.color = action.color
-      break
-    default:
-      break
-  }
-}
-
-const store = createStore(appState, stateChanger)
-store.subscribe(() => renderApp(store.getState())) // 监听数据变化
-
-renderApp(store.getState()) // 首次渲染页面
-store.dispatch({ type: 'UPDATE_TITLE_TEXT', text: '《Updated Title》' }) // 修改标题文本
-store.dispatch({ type: 'UPDATE_TITLE_COLOR', color: 'blue' }) // 修改标题颜色
