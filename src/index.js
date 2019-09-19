@@ -1,132 +1,125 @@
-/*现在我们把它们集中到一个地方，给这个地方起个名字叫做 store，然后构建一个函数 createStore，
-用来专门生产这种 state 和 dispatch 的集合，这样别的 App 也可以用这种模式了*/
-
-// function createStore (state, stateChanger) {
-//   const getState = () => state
-//   const dispatch = (action) => stateChanger(state, action)
-//   return { getState, dispatch }
-// }
-
-/*
-
-createStore 接受两个参数，一个是表示应用程序状态的 state；
-另外一个是 stateChanger，它来描述应用程序状态会根据 action 发生什么变化，其实就是相当于本节开头的 dispatch 代码里面的内容。
-
-createStore 会返回一个对象，这个对象包含两个方法 getState 和 dispatch。
-getState 用于获取 state 数据，其实就是简单地把 state 参数返回。
-dispatch 用于修改数据，和以前一样会接受 action，然后它会把 state 和 action 一并传给 stateChanger，
-那么 stateChanger 就可以根据 action 来修改 state 了。
-
-*/
-
-//修改上一节的dispatch方法成为stateChanger
-// function stateChanger (state, action) {
-//   switch (action.type) {
-//     case 'UPDATE_TITLE_TEXT':
-//       state.title.text = action.text
-//       break
-//     case 'UPDATE_TITLE_COLOR':
-//       state.title.color = action.color
-//       break
-//     default:
-//       break
-//   }
-// }
-
-/*
-针对每个不同的 App，我们可以给 createStore 传入初始的数据 appState，和一个描述数据变化的函数 stateChanger，然后生成一个 store。
-需要修改数据的时候通过 store.dispatch，需要获取数据的时候通过 store.getState。
-*/
-
 /* 
 
-上面的代码有一个问题，我们每次通过 dispatch 修改数据的时候，其实只是数据发生了变化，
-如果我们不手动调用 renderApp，页面上的内容是不会发生变化的。
-但是我们总不能每次 dispatch 的时候都手动调用一下 renderApp，
-我们肯定希望数据变化的时候程序能够智能一点地自动重新渲染数据，而不是手动调用。
+我们再来回顾一下
 
-往 dispatch里面加 renderApp 就好了，但是这样 createStore 就不够通用了。
-我们希望用一种通用的方式“监听”数据变化，然后重新渲染页面，这里要用到观察者模式。修改 createStore
+我们从一个简单的例子的代码中发现了共享的状态如果可以被任意修改的话，那么程序的行为将非常不可预料，
+所以我们提高了修改数据的门槛：你必须通过 dispatch 执行某些允许的修改操作，而且必须大张旗鼓的在 action 里面声明
+
+这种模式挺好用的，我们就把它抽象出来一个 createStore，它可以产生 store，里面包含 getState 和 dispatch 函数，方便我们使用。
+
+后来发现每次修改数据都需要手动重新渲染非常麻烦，我们希望自动重新渲染视图。
+所以后来加入了订阅者模式，可以通过 store.subscribe 订阅数据修改事件，每次数据更新的时候自动重新渲染视图。
+
+接下来我们发现了原来的“重新渲染视图”有比较严重的性能问题，我们引入了“共享结构的对象”来帮我们解决问题，
+这样就可以在每个渲染函数的开头进行简单的判断避免没有被修改过的数据重新渲染。
+
+我们优化了 stateChanger 为 reducer，定义了 reducer 只能是纯函数，
+功能就是负责初始 state，和根据 state 和 action 计算具有共享结构的新的 state。
+
+createStore 现在可以直接拿来用了，套路就是：
+
 
 */
 
-// function createStore (state, stateChanger) {
-//   const listeners = []
-//   const subscribe = (listener) => listeners.push(listener)
-//   const getState = () => state
-//   const dispatch = (action) => {
-//     stateChanger(state, action)
-//     listeners.forEach((listener) => listener())
-//   }
-//   return { getState, dispatch, subscribe }
+// // 定一个 reducer
+// function reducer (state, action) {
+//   /* 初始化 state 和 switch case */
 // }
 
-/*
+// // 生成 store
+// const store = createStore(reducer)
 
-我们在 createStore 里面定义了一个数组 listeners，还有一个新的方法 subscribe，
-可以通过 store.subscribe(listener) 的方式给 subscribe 传入一个监听函数，这个函数会被 push 到数组当中。
+// // 监听数据变化重新渲染页面
+// store.subscribe(() => renderApp(store.getState()))
 
-我们修改了 dispatch，每次当它被调用的时候，除了会调用 stateChanger 进行数据的修改，
-还会遍历 listeners 数组里面的函数，然后一个个地去调用。相当于我们可以通过 subscribe 传入数据变化的监听函数，
-每当 dispatch 的时候，监听函数就会被调用，这样我们就可以在每当数据变化时候进行重新渲染：
+// // 首次渲染页面
+// renderApp(store.getState()) 
 
-*/
+// // 后面可以随意 dispatch 了，页面自动更新
+// store.dispatch(...)
 
-function createStore (state, stateChanger) {
+//现在的代码跟 React.js 一点关系都没有，接下来我们要把 React.js 和 Redux 结合起来，用 Redux 模式帮助管理 React.js 的应用状态。
+
+function renderApp (newAppState, oldAppState = {}) { // 防止 oldAppState 没有传入，所以加了默认参数 oldAppState = {}
+  if (newAppState === oldAppState) return // 数据没有变化就不渲染了
+  console.log('render app...')
+  renderTitle(newAppState.title, oldAppState.title)
+  renderContent(newAppState.content, oldAppState.content)
+}
+
+function renderTitle (newTitle, oldTitle = {}) {
+  if (newTitle === oldTitle) return // 数据没有变化就不渲染了
+  console.log('render title...')
+  const titleDOM = document.getElementById('title')
+  titleDOM.innerHTML = newTitle.text
+  titleDOM.style.color = newTitle.color
+}
+
+function renderContent (newContent, oldContent = {}) {
+  if (newContent === oldContent) return // 数据没有变化就不渲染了
+  console.log('render content...')
+  const contentDOM = document.getElementById('content')
+  contentDOM.innerHTML = newContent.text
+  contentDOM.style.color = newContent.color
+}
+
+function createStore (reducer) {
+  let state = null
   const listeners = []
   const subscribe = (listener) => listeners.push(listener)
   const getState = () => state
   const dispatch = (action) => {
-    stateChanger(state, action)
+    state = reducer(state, action)
     listeners.forEach((listener) => listener())
   }
+  dispatch({}) // 初始化 state
   return { getState, dispatch, subscribe }
 }
 
-function renderApp (appState) {
-  renderTitle(appState.title)
-  renderContent(appState.content)
-}
-
-function renderTitle (title) {
-  const titleDOM = document.getElementById('title')
-  titleDOM.innerHTML = title.text
-  titleDOM.style.color = title.color
-}
-
-function renderContent (content) {
-  const contentDOM = document.getElementById('content')
-  contentDOM.innerHTML = content.text
-  contentDOM.style.color = content.color
-}
-
-let appState = {
-  title: {
-    text: 'This is Title',
-    color: 'red',
-  },
-  content: {
-    text: 'This is Content',
-    color: 'blue'
+function contentReducer (state, action) {
+  if (!state) {
+    return {
+      title: {
+        text: 'Initial Text',
+        color: 'red',
+      },
+      content: {
+        text: 'Initial Content',
+        color: 'blue'
+      }
+    }
   }
-}
-
-function stateChanger (state, action) {
   switch (action.type) {
     case 'UPDATE_TITLE_TEXT':
-      state.title.text = action.text
-      break
+      return {
+        ...state,
+        title: {
+          ...state.title,
+          text: action.text
+        }
+      }
     case 'UPDATE_TITLE_COLOR':
-      state.title.color = action.color
-      break
+      return {
+        ...state,
+        title: {
+          ...state.title,
+          color: action.color
+        }
+      }
     default:
-      break
+      return state
   }
 }
 
-const store = createStore(appState, stateChanger)
-store.subscribe(() => renderApp(store.getState())) // 监听数据变化
+const store = createStore(contentReducer)
+let oldState = store.getState() // 缓存旧的 state
+store.subscribe(() => {
+  const newState = store.getState() // 数据可能变化，获取新的 state
+  renderApp(newState, oldState) // 把新旧的 state 传进去渲染
+  oldState = newState // 渲染完以后，新的 newState 变成了旧的 oldState，等待下一次数据变化重新渲染
+})
 
-renderApp(store.getState()) // 首次渲染页面
-store.dispatch({ type: 'UPDATE_TITLE_TEXT', text: '《Updated Title》' }) // 修改标题文本
+renderApp(store.getState()) 
+
+store.dispatch({ type: 'UPDATE_TITLE_TEXT', text: 'Updated Title' }) // 修改标题文本
 store.dispatch({ type: 'UPDATE_TITLE_COLOR', color: 'blue' }) // 修改标题颜色
